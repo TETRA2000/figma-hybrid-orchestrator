@@ -411,6 +411,67 @@ function IconImg({ src, fallback: Fallback, className }) {
 
 ---
 
+## M13: CSS Cascade Layer Conflict (Tailwind v4)
+
+**Severity:** P1 — Layout broken
+
+**What it looks like:** Content containers have the correct `max-width` but are flush-left instead of centered. All `mx-auto`, `px-*`, `mt-*`, `mb-*`, `gap-*` utilities silently fail. Layout looks "exploded" — text touches edges, spacing collapses between elements.
+
+**Why it happens:** Tailwind CSS v4 generates all utilities inside `@layer utilities { ... }`. In CSS cascade layers, **unlayered styles always beat layered styles regardless of specificity**. If the global CSS has a universal reset outside any layer:
+
+```css
+/* THIS BREAKS ALL TAILWIND MARGINS AND PADDING IN v4 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+```
+
+...then `margin: 0` (unlayered, specificity 0,0,0) beats `.mx-auto { margin-inline: auto }` (inside `@layer utilities`, specificity 0,1,0). This is counterintuitive — higher specificity loses because it's in a layer.
+
+**How to detect:**
+- In Playwright, check `getComputedStyle(el).marginLeft` on a `mx-auto` element — if it's `0px` instead of `auto`, this bug is present
+- Any element with `mx-auto` + `max-w-*` that has `left: 0` instead of being centered
+- Multiple spacing utilities failing simultaneously (not just one)
+
+**Programmatic check:**
+```javascript
+// In Playwright page.evaluate:
+const testEl = document.createElement('div');
+testEl.className = 'mx-auto';
+testEl.style.maxWidth = '100px';
+document.body.appendChild(testEl);
+const ml = getComputedStyle(testEl).marginLeft;
+document.body.removeChild(testEl);
+if (ml === '0px') {
+  // CASCADE LAYER CONFLICT — unlayered CSS is overriding Tailwind utilities
+}
+```
+
+**Fix:**
+```css
+/* Option A: Move reset into Tailwind's base layer */
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+}
+
+/* Option B: Remove the reset entirely (Tailwind v4 preflight handles it) */
+/* Just delete the * { ... } block */
+```
+
+**Prevention:**
+- When generating `index.css` or global styles, NEVER write CSS resets outside `@layer base { ... }` when using Tailwind v4
+- Tailwind v4's `@import "tailwindcss"` already includes a preflight reset — additional `*` resets are usually unnecessary
+- If custom global styles are needed, always wrap them in `@layer base { ... }`
+- This does NOT affect Tailwind v3 (which uses `@tailwind` directives without CSS layers)
+
+---
+
 ## Verification Checklist (Phase 4)
 
 When running Phase 4, check each mismatch type in order:
@@ -428,6 +489,9 @@ When running Phase 4, check each mismatch type in order:
 [ ] M10: Figma asset URLs accessible? Fallbacks provided?
 [ ] M11: Multi-layer gradients preserved (not simplified)?
 [ ] M12: Absolute positioning converted to flex/grid? (<20% absolute)
+[ ] M13: Tailwind utilities actually applying? (test mx-auto → marginLeft !== '0px')
 ```
 
 This checklist should be evaluated both visually (screenshot comparison) and structurally (computed styles via Playwright).
+
+**Critical M13 check:** Before running any other structural audits, first verify that Tailwind utilities are actually being applied. If M13 fails, ALL other margin/padding checks will give misleading results. Run the cascade layer test first:

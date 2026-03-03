@@ -99,6 +99,56 @@ Use Playwright's `page.evaluate()` to measure actual CSS properties of rendered 
 
 Run these checks in priority order. Each maps to a common mismatch pattern (see `references/common-mismatches.md`):
 
+#### Check 0: CSS Cascade Layer Integrity (Mismatch M13) — RUN FIRST
+
+**This check MUST run before all others.** If this fails, every margin/padding/gap measurement will be wrong, and other checks will give false passes.
+
+```javascript
+// In Playwright page.evaluate():
+// Test that Tailwind utilities actually apply by creating a test element
+const testEl = document.createElement('div');
+testEl.className = 'mx-auto';
+testEl.style.maxWidth = '100px';
+testEl.style.width = '100px';
+document.body.appendChild(testEl);
+const testML = getComputedStyle(testEl).marginLeft;
+document.body.removeChild(testEl);
+
+if (testML === '0px') {
+  console.error('CRITICAL: CSS cascade layer conflict detected!');
+  console.error('Tailwind mx-auto resolves to margin: 0px — unlayered CSS is overriding @layer utilities');
+  console.error('Fix: Move all global CSS resets into @layer base { ... } in index.css');
+  // STOP — other checks will give false results
+}
+
+// Also test padding
+const testEl2 = document.createElement('div');
+testEl2.className = 'px-6';
+document.body.appendChild(testEl2);
+const testPL = getComputedStyle(testEl2).paddingLeft;
+document.body.removeChild(testEl2);
+
+if (testPL === '0px') {
+  console.error('CRITICAL: Tailwind px-6 resolves to padding: 0px — cascade layer conflict confirmed');
+}
+
+// Verify on actual content containers
+const containers = document.querySelectorAll('[class*="mx-auto"]');
+containers.forEach(c => {
+  const rect = c.getBoundingClientRect();
+  const parent = c.parentElement.getBoundingClientRect();
+  if (rect.width < parent.width && rect.left === parent.left) {
+    console.error(`Container with mx-auto is flush-left instead of centered: left=${rect.left}, width=${rect.width}, parent.width=${parent.width}`);
+  }
+});
+```
+
+**Expected:** `testML` should be a pixel value > 0 (like `"670px"` on a 1440px viewport), NOT `"0px"`.
+
+**Fail condition:** `testML === '0px'` when the element has a constrained width. This means ALL Tailwind margin/padding utilities are broken.
+
+**If this check fails:** Stop the audit, report M13 as a P0 blocker, and fix the CSS before re-running.
+
 #### Check 1: Container Width & Margins (Mismatch M3)
 
 ```javascript
@@ -322,6 +372,7 @@ Remaining:
 
 | Check | Pass | Warn | Fail |
 |---|---|---|---|
+| **Cascade layers (M13)** | **mx-auto → margin > 0** | **N/A** | **mx-auto → margin = 0 (BLOCKER)** |
 | Container width | Within ±5% of Figma | Within ±15% | > 15% off or no max-width |
 | Section gaps | Within ±20% of Figma | Within ±40% | > 40% off or collapsed |
 | Gradient text | Has gradient CSS | Has flat color close to gradient midpoint | Wrong color entirely |

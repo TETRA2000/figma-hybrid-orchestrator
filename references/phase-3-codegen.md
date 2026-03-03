@@ -349,6 +349,41 @@ Rules:
 4. Preserve all gradient layers — don't merge multiple into one
 5. Box shadows: copy exact values including inset shadows
 
+## Global CSS / Reset Rules (Mismatch M13 — P1 severity)
+
+**CRITICAL for Tailwind CSS v4:** All utility classes are generated inside `@layer utilities`. If you write CSS resets or global styles OUTSIDE a layer, they will silently override all Tailwind margin, padding, and gap utilities.
+
+```css
+/* WRONG — breaks mx-auto, px-6, mt-5, gap-4, etc. in Tailwind v4 */
+@import "tailwindcss";
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* CORRECT — reset lives in same layer hierarchy as Tailwind base */
+@import "tailwindcss";
+
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+}
+
+/* BEST — just remove the reset, Tailwind v4 preflight handles it */
+@import "tailwindcss";
+```
+
+**Rules:**
+1. When generating `index.css` or any global stylesheet with Tailwind v4 (`@import "tailwindcss"`): NEVER write CSS outside `@layer base { ... }`
+2. The `@theme { ... }` directive is fine (it's processed specially by Tailwind)
+3. `body { font-family: ... }` and other element selectors MUST go inside `@layer base { ... }`
+4. This does NOT apply to Tailwind v3, which uses `@tailwind base/components/utilities` directives
+
 ## Tailwind Config Generation
 
 If Phase 1 inferred custom colors or spacing that don't map to Tailwind defaults, generate a config extension:

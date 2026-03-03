@@ -197,6 +197,7 @@ export default function ComponentName({}: ComponentNameProps) {
 - **Figma asset URLs (M10):** MCP asset URLs expire after 7 days. Always provide inline SVG fallbacks with `onError` handling, or download assets locally during generation.
 - **Multi-layer gradients (M11):** When `get_design_context` returns multiple `linear-gradient()` layers in `backgroundImage`, preserve ALL layers exactly. Never simplify or merge gradients.
 - **Absolute positioning from MCP (M12):** When `get_design_context` returns children as `absolute` positioned, infer the correct flex/grid layout from their bounding boxes. Same-Y children = flex row, same-X = flex column, 2D pattern = CSS grid. See `references/layout-inference.md` for the full algorithm.
+- **CSS cascade layer conflicts (M13):** When using Tailwind CSS v4 (`@import "tailwindcss"`), NEVER write CSS resets or global styles outside `@layer base { ... }`. Unlayered `* { margin: 0 }` silently overrides ALL Tailwind margin/padding/gap utilities. See M13 in `references/common-mismatches.md`.
 
 For full patterns, examples, and prevention strategies, see `references/phase-3-codegen.md`.
 
@@ -269,7 +270,7 @@ At the end of the pipeline, deliver:
 
 | File | When to Read |
 |------|-------------|
-| `references/common-mismatches.md` | **Read first!** Catalog of 12 common mismatch types (M1–M12) with fixes |
+| `references/common-mismatches.md` | **Read first!** Catalog of 13 common mismatch types (M1–M13) with fixes |
 | `references/layout-inference.md` | **Critical!** Algorithm to convert absolute positioning → flex/grid layouts |
 | `references/phase-0-assessment.md` | Full scoring rubric, metadata parsing examples |
 | `references/phase-1-inference.md` | Color clustering algorithm, spacing extraction, pattern detection |

@@ -28,7 +28,7 @@ Phase 4: Verification   → Two-layer Playwright audit: visual + structural (opt
 
 ## Common Mismatch Catalog
 
-Tested against real-world Figma files (including an Apple-style product page), the skill includes a catalog of 12 common mismatch patterns and their fixes:
+Tested against real-world Figma files (including an Apple-style product page), the skill includes a catalog of 13 common mismatch patterns and their fixes:
 
 | ID | Mismatch | Severity | What Happens |
 |---|---|:---:|---|
@@ -44,6 +44,7 @@ Tested against real-world Figma files (including an Apple-style product page), t
 | M10 | Figma asset URLs broken | P0 | Icons/images fail to load after URL expiry (7 days) |
 | M11 | Multi-layer gradient simplified | P1 | Complex background compositing lost when gradients merged |
 | M12 | Absolute positioning from MCP | P1 | Layout uses `position: absolute` instead of flex/grid, breaks on resize |
+| M13 | CSS cascade layer conflict | P1 | Unlayered `* { margin: 0 }` overrides ALL Tailwind v4 margin/padding utilities |
 
 ## Layout Inference Algorithm
 
@@ -94,7 +95,7 @@ cp -r figma-hybrid-orchestrator/ ~/.claude/skills/
 figma-hybrid-orchestrator/
 ├── SKILL.md                              # Main skill (orchestration logic)
 ├── references/
-│   ├── common-mismatches.md              # 9 mismatch patterns with detection & fixes
+│   ├── common-mismatches.md              # 13 mismatch patterns with detection & fixes
 │   ├── phase-0-assessment.md             # Scoring rubric & metadata parsing
 │   ├── phase-1-inference.md              # Color clustering, spacing, components
 │   ├── phase-2-decomposition.md          # Section detection for large files
