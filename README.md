@@ -28,7 +28,7 @@ Phase 4: Verification   → Two-layer Playwright audit: visual + structural (opt
 
 ## Common Mismatch Catalog
 
-Tested against real-world Figma files (including an Apple-style product page), the skill includes a catalog of 9 common mismatch patterns and their fixes:
+Tested against real-world Figma files (including an Apple-style product page), the skill includes a catalog of 11 common mismatch patterns and their fixes:
 
 | ID | Mismatch | Severity | What Happens |
 |---|---|:---:|---|
@@ -41,6 +41,8 @@ Tested against real-world Figma files (including an Apple-style product page), t
 | M7 | Text alignment wrong | P2 | Centered text renders left-aligned |
 | M8 | Nav positioning missing | P3 | Fixed/sticky nav scrolls with content |
 | M9 | Dark background missing | P3 | Light text on accidentally-white background |
+| M10 | Figma asset URLs broken | P0 | Icons/images fail to load after URL expiry (7 days) |
+| M11 | Multi-layer gradient simplified | P1 | Complex background compositing lost when gradients merged |
 
 Phase 3 includes prevention rules for each pattern. Phase 4's structural audit catches them in the rendered output.
 

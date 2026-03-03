@@ -224,19 +224,62 @@ export function FeaturesSection() {
 }
 ```
 
-## Asset Handling
+## Asset Handling (Mismatch M10)
 
-**Images from Figma MCP:**
-The `get_design_context` response includes localhost URLs for images and SVGs. Use them directly:
+**Critical:** Figma MCP asset URLs (`https://www.figma.com/api/mcp/asset/...` or `http://localhost:3845/figma/images/...`) expire after 7 days and may not load in end-user browsers. Always provide fallbacks.
 
+**Strategy 1: Figma URL with inline SVG fallback (recommended):**
 ```tsx
-// CORRECT — use the Figma MCP localhost URL
-<img src="http://localhost:3845/figma/images/abc123/1:234" alt="Hero" className="w-full" />
+function IconImg({ src, fallback: Fallback, className }: {
+  src: string;
+  fallback: React.FC<{ className?: string }>;
+  className?: string;
+}) {
+  return (
+    <>
+      <img
+        src={src}
+        alt=""
+        className={className}
+        onError={(e) => {
+          (e.target as HTMLElement).style.display = 'none';
+          (e.target as HTMLElement).nextElementSibling!.style.display = 'block';
+        }}
+      />
+      <span style={{ display: 'none' }}>
+        <Fallback className={className} />
+      </span>
+    </>
+  );
+}
 
-// WRONG — never use placeholders
+// Usage
+function ChipIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <rect x="9" y="9" width="6" height="6" />
+      <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3" />
+    </svg>
+  );
+}
+
+<IconImg src={figmaUrl} fallback={ChipIcon} className="w-6 h-6" />
+```
+
+**Strategy 2: Download assets during generation (most reliable):**
+```bash
+# During Phase 3, download all asset URLs
+curl -o public/assets/chip.svg "https://www.figma.com/api/mcp/asset/abc123"
+```
+Then reference as `/assets/chip.svg` in the code.
+
+**Never use placeholders:**
+```tsx
+// WRONG — placeholder images
 <img src="/placeholder.png" alt="Hero" />
 
-// WRONG — never import random packages
+// WRONG — importing random icon packages
 import { ImageIcon } from 'lucide-react';
 ```
 
@@ -252,6 +295,27 @@ function ArrowIcon({ className }: { className?: string }) {
   );
 }
 ```
+
+## Gradient Preservation (Mismatch M11)
+
+When `get_design_context` returns multi-layer backgrounds, **preserve them exactly**:
+
+```tsx
+/* WRONG — simplified gradient */
+style={{ backgroundImage: 'linear-gradient(145deg, #c4b5a0, #867a6c 50%, #3b3b3d)' }}
+
+/* CORRECT — exact Figma values with all layers */
+style={{
+  backgroundImage: 'linear-gradient(90deg, rgb(29, 29, 31) 0%, rgb(29, 29, 31) 100%), linear-gradient(145.36deg, rgb(196, 181, 160) 0%, rgb(134, 122, 108) 50%, rgb(59, 59, 61) 100%)'
+}}
+```
+
+Rules:
+1. Copy `backgroundImage` values verbatim from design context
+2. Preserve exact angles (e.g., `145.36deg` not `145deg`)
+3. Preserve `rgb()` format — don't convert to hex
+4. Preserve all gradient layers — don't merge multiple into one
+5. Box shadows: copy exact values including inset shadows
 
 ## Tailwind Config Generation
 

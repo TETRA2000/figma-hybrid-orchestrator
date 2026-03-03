@@ -291,20 +291,100 @@ Pass these gaps to Phase 3. In the assembly component, use `gap-[Xpx]` or explic
 
 ---
 
+## M10: Figma MCP Asset URLs Breaking in Production
+
+**What it looks like:** Icons, images, and SVGs show as broken image placeholders because the `https://www.figma.com/api/mcp/asset/...` URLs expired or require authentication.
+
+**Why it happens:** The `get_design_context` tool returns localhost or Figma API URLs for image assets. These URLs are temporary (7-day expiry) and may not be accessible from the end user's browser without Figma authentication.
+
+**How to detect:**
+- Look for `<img>` elements with `src` containing `figma.com/api/mcp/asset/` or `localhost:3845/figma/`
+- In the browser, check if any images fail to load (404 or 403 errors)
+- In Playwright, check `img.naturalWidth === 0` for any image element
+
+**Fix pattern:**
+```tsx
+/* WRONG — Figma URL that will expire */
+<img src="https://www.figma.com/api/mcp/asset/abc123" alt="Chip" className="w-6 h-6" />
+
+/* CORRECT — Inline SVG fallback with graceful degradation */
+function IconImg({ src, fallback: Fallback, className }) {
+  return (
+    <>
+      <img
+        src={src}
+        className={className}
+        onError={(e) => {
+          e.target.style.display = 'none'
+          e.target.nextElementSibling.style.display = 'block'
+        }}
+      />
+      <span style={{ display: 'none' }}>
+        <Fallback className={className} />
+      </span>
+    </>
+  )
+}
+
+/* BEST — Download assets during generation and serve locally */
+// During Phase 3, download all Figma asset URLs to /public/assets/
+// Then reference them as /assets/chip-icon.svg
+```
+
+**Prevention:** In Phase 3, when generating code:
+1. Identify all Figma asset URLs from `get_design_context`
+2. Either download and embed them locally, or create inline SVG fallbacks
+3. For common icons (arrows, chips, locks, etc.), generate semantic SVG components
+4. Use an `onError` fallback pattern for graceful degradation
+
+---
+
+## M11: Dual-Layer Background Gradient Simplification
+
+**What it looks like:** Gradient text uses a simplified single gradient when Figma specified multiple background layers.
+
+**Why it happens:** Figma's `get_design_context` returns multi-layer `backgroundImage` values like `linear-gradient(...), linear-gradient(...)`. LLMs often simplify this to a single gradient, losing the visual compositing effect.
+
+**How to detect:**
+- In `get_design_context` output, look for `style={{ backgroundImage: "linear-gradient(...), linear-gradient(...)" }}`
+- Count the number of gradient layers in the original vs the generated code
+- Compare the exact gradient angles and color stops
+
+**Fix pattern:**
+```tsx
+/* WRONG — simplified to single gradient */
+<span style={{ backgroundImage: 'linear-gradient(145deg, #c4b5a0, #867a6c 50%, #3b3b3d 100%)' }}>
+
+/* CORRECT — use the exact Figma gradient values */
+<span style={{
+  backgroundImage: 'linear-gradient(90deg, rgb(29, 29, 31) 0%, rgb(29, 29, 31) 100%), linear-gradient(145.36deg, rgb(196, 181, 160) 0%, rgb(134, 122, 108) 50%, rgb(59, 59, 61) 100%)'
+}}>
+```
+
+**Prevention:** In Phase 3, when copying `backgroundImage` from design context:
+1. Preserve ALL gradient layers exactly as provided by the MCP
+2. Do not simplify or merge multiple gradients into one
+3. Keep exact angle values (e.g., `145.36deg` not `145deg`)
+4. Preserve `rgb()` format from design context rather than converting to hex
+
+---
+
 ## Verification Checklist (Phase 4)
 
 When running Phase 4, check each mismatch type in order:
 
 ```
-[ ] M1: Any gradient/special text rendered as flat color?
-[ ] M2: Any images/SVGs with wrong aspect ratio?
-[ ] M3: Content sections at correct width with proper margins?
-[ ] M4: Vertical spacing between sections matches Figma?
-[ ] M5: Buttons styled as pills/rectangles (not plain text)?
-[ ] M6: Heading sizes within ±10% of Figma values?
-[ ] M7: Text alignment (center/left/right) matches Figma?
-[ ] M8: Navigation fixed/sticky if applicable?
-[ ] M9: Dark section backgrounds preserved?
+[ ] M1:  Any gradient/special text rendered as flat color?
+[ ] M2:  Any images/SVGs with wrong aspect ratio?
+[ ] M3:  Content sections at correct width with proper margins?
+[ ] M4:  Vertical spacing between sections matches Figma?
+[ ] M5:  Buttons styled as pills/rectangles (not plain text)?
+[ ] M6:  Heading sizes within ±10% of Figma values?
+[ ] M7:  Text alignment (center/left/right) matches Figma?
+[ ] M8:  Navigation fixed/sticky if applicable?
+[ ] M9:  Dark section backgrounds preserved?
+[ ] M10: Figma asset URLs accessible? Fallbacks provided?
+[ ] M11: Multi-layer gradients preserved (not simplified)?
 ```
 
 This checklist should be evaluated both visually (screenshot comparison) and structurally (computed styles via Playwright).

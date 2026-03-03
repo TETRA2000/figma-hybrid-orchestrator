@@ -190,6 +190,8 @@ export default function ComponentName({}: ComponentNameProps) {
 - **Button detection (M5):** Frames named "Link"/"Button" with fills + border-radius + text are styled buttons, not plain links. Generate full `bg-[color] rounded-full px-7 py-3`.
 - **Heading sizes (M6):** For large headings (>24px), use exact Figma px values as `text-[Xpx]` rather than nearest Tailwind class.
 - **Text alignment (M7):** Check if text x-position centers within its parent. If `|x - (parent_width - text_width)/2| < 10px`, add `text-center`.
+- **Figma asset URLs (M10):** MCP asset URLs expire after 7 days. Always provide inline SVG fallbacks with `onError` handling, or download assets locally during generation.
+- **Multi-layer gradients (M11):** When `get_design_context` returns multiple `linear-gradient()` layers in `backgroundImage`, preserve ALL layers exactly. Never simplify or merge gradients.
 
 For full patterns, examples, and prevention strategies, see `references/phase-3-codegen.md`.
 
@@ -262,7 +264,7 @@ At the end of the pipeline, deliver:
 
 | File | When to Read |
 |------|-------------|
-| `references/common-mismatches.md` | **Read first!** Catalog of 9 common mismatch types with fixes |
+| `references/common-mismatches.md` | **Read first!** Catalog of 11 common mismatch types (M1–M11) with fixes |
 | `references/phase-0-assessment.md` | Full scoring rubric, metadata parsing examples |
 | `references/phase-1-inference.md` | Color clustering algorithm, spacing extraction, pattern detection |
 | `references/phase-2-decomposition.md` | Section detection algorithm, token budget management |
