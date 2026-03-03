@@ -224,6 +224,38 @@ export function FeaturesSection() {
 }
 ```
 
+## Layout Inference (Mismatch M12) — CRITICAL
+
+When `get_design_context` returns children with `position: absolute`, you MUST convert them to semantic flex/grid layouts. **Never copy absolute positioning into production code.**
+
+See `references/layout-inference.md` for the full algorithm. Quick reference:
+
+**Step 1: Extract bounding boxes** from Tailwind classes or metadata XML
+**Step 2: Detect direction** — same Y = row, same X = column, 2D = grid
+**Step 3: Detect alignment** — equal margins = centered, far edges = justify-between
+**Step 4: Detect gaps** — uniform differences = gap-[X], varying = individual margins
+**Step 5: Generate flex/grid** — replace absolute positioning with semantic layout
+
+```tsx
+/* BEFORE — from get_design_context (absolute, unmaintainable) */
+<div className="relative size-full">
+  <div className="absolute left-[40px] top-[48px] size-[48px]">{icon}</div>
+  <div className="absolute left-[40px] top-[120px] w-[450px]">{heading}</div>
+  <div className="absolute left-[40px] top-[169px] w-[450px]">{paragraph}</div>
+</div>
+
+/* AFTER — layout inference applied (semantic, responsive) */
+<div className="flex flex-col pt-12 px-10 pb-10">
+  <div className="w-12 h-12 mb-6">{icon}</div>
+  <h3 className="text-[26px] font-bold mb-[10px]">{heading}</h3>
+  <p className="text-[15px] leading-6">{paragraph}</p>
+</div>
+```
+
+**When to keep absolute:** Only for truly overlapping decorative elements (badges, floating icons, background shapes).
+
+---
+
 ## Asset Handling (Mismatch M10)
 
 **Critical:** Figma MCP asset URLs (`https://www.figma.com/api/mcp/asset/...` or `http://localhost:3845/figma/images/...`) expire after 7 days and may not load in end-user browsers. Always provide fallbacks.

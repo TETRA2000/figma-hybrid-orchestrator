@@ -158,8 +158,12 @@ For the full decomposition algorithm, see `references/phase-2-decomposition.md`.
    b. Transform it into a React functional component with TypeScript
    c. Map colors to Tailwind classes (use inferred tokens or standard Tailwind palette)
    d. Map spacing to Tailwind utilities (p-4, gap-6, etc.)
-   e. Map layout to flex/grid utilities
-   f. Extract images/SVGs — use the localhost URLs from Figma MCP directly, do NOT use placeholders
+   e. **Map layout to flex/grid using layout inference** (see `references/layout-inference.md`):
+      - If `get_design_context` returns children with `absolute` positioning, do NOT copy them as-is
+      - Analyze child bounding boxes: same Y → flex row, same X → flex column, 2D pattern → CSS grid
+      - Detect centering (equal margins), uniform gaps, justify-between patterns
+      - Convert absolute positions to semantic flex/grid with proper gaps and alignment
+   f. Extract images/SVGs — use the Figma MCP asset URLs, but always provide inline SVG fallbacks (see M10)
 4. If multiple sections were decomposed in Phase 2, create a parent layout component that assembles them
 5. Generate a `tailwind.config.ts` extension if custom colors were inferred in Phase 1
 
@@ -192,6 +196,7 @@ export default function ComponentName({}: ComponentNameProps) {
 - **Text alignment (M7):** Check if text x-position centers within its parent. If `|x - (parent_width - text_width)/2| < 10px`, add `text-center`.
 - **Figma asset URLs (M10):** MCP asset URLs expire after 7 days. Always provide inline SVG fallbacks with `onError` handling, or download assets locally during generation.
 - **Multi-layer gradients (M11):** When `get_design_context` returns multiple `linear-gradient()` layers in `backgroundImage`, preserve ALL layers exactly. Never simplify or merge gradients.
+- **Absolute positioning from MCP (M12):** When `get_design_context` returns children as `absolute` positioned, infer the correct flex/grid layout from their bounding boxes. Same-Y children = flex row, same-X = flex column, 2D pattern = CSS grid. See `references/layout-inference.md` for the full algorithm.
 
 For full patterns, examples, and prevention strategies, see `references/phase-3-codegen.md`.
 
@@ -264,7 +269,8 @@ At the end of the pipeline, deliver:
 
 | File | When to Read |
 |------|-------------|
-| `references/common-mismatches.md` | **Read first!** Catalog of 11 common mismatch types (M1–M11) with fixes |
+| `references/common-mismatches.md` | **Read first!** Catalog of 12 common mismatch types (M1–M12) with fixes |
+| `references/layout-inference.md` | **Critical!** Algorithm to convert absolute positioning → flex/grid layouts |
 | `references/phase-0-assessment.md` | Full scoring rubric, metadata parsing examples |
 | `references/phase-1-inference.md` | Color clustering algorithm, spacing extraction, pattern detection |
 | `references/phase-2-decomposition.md` | Section detection algorithm, token budget management |

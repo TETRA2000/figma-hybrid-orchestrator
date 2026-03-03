@@ -369,6 +369,48 @@ function IconImg({ src, fallback: Fallback, className }) {
 
 ---
 
+## M12: Absolute Positioning Instead of Flex/Grid
+
+**What it looks like:** Elements render at correct positions on the exact design viewport, but the layout breaks on different screen sizes. Code is filled with `position: absolute; left: Xpx; top: Ypx;`.
+
+**Why it happens:** When Figma frames lack auto layout, MCP outputs absolute positioning for all children. LLMs copy these verbatim instead of inferring the intended flex/grid layout.
+
+**How to detect:**
+- Count `position: absolute` in output — if >20% of layout elements are absolute, this mismatch is present
+- Resize the browser window — absolute-positioned elements won't reflow
+- In Playwright: `document.querySelectorAll('[class*="absolute"]').length`
+
+**Fix pattern — Apply the layout inference algorithm (`references/layout-inference.md`):**
+```tsx
+/* WRONG — absolute positioning from MCP */
+<div className="relative w-[1080px] h-[163px]">
+  <div className="absolute left-[230px] top-[40px]">48MP</div>
+  <div className="absolute left-[409px] top-[40px]">5x</div>
+  <div className="absolute left-[570px] top-[40px]">4K120</div>
+  <div className="absolute left-[751px] top-[40px]">48MP</div>
+</div>
+
+/* CORRECT — inferred flex layout */
+<div className="flex justify-center gap-20 pt-10">
+  <Stat value="48" unit="MP" label="Fusion camera" />
+  <Stat value="5" unit="x" label="Optical zoom" />
+  <Stat value="4K" unit="120" label="Dolby Vision" />
+  <Stat value="48" unit="MP" label="Ultra Wide" />
+</div>
+```
+
+**Inference rules (quick reference):**
+1. Same Y (±5px) → `flex-direction: row`
+2. Same X (±5px) → `flex-direction: column`
+3. 2D grid pattern → `display: grid`
+4. Equal left/right margins → centered
+5. Uniform gaps → `gap-[Xpx]`
+6. Items at edges → `justify-between`
+
+**Prevention:** NEVER copy absolute positioning from `get_design_context`. Always infer flex/grid from child bounding boxes.
+
+---
+
 ## Verification Checklist (Phase 4)
 
 When running Phase 4, check each mismatch type in order:
@@ -385,6 +427,7 @@ When running Phase 4, check each mismatch type in order:
 [ ] M9:  Dark section backgrounds preserved?
 [ ] M10: Figma asset URLs accessible? Fallbacks provided?
 [ ] M11: Multi-layer gradients preserved (not simplified)?
+[ ] M12: Absolute positioning converted to flex/grid? (<20% absolute)
 ```
 
 This checklist should be evaluated both visually (screenshot comparison) and structurally (computed styles via Playwright).

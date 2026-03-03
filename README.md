@@ -28,7 +28,7 @@ Phase 4: Verification   → Two-layer Playwright audit: visual + structural (opt
 
 ## Common Mismatch Catalog
 
-Tested against real-world Figma files (including an Apple-style product page), the skill includes a catalog of 11 common mismatch patterns and their fixes:
+Tested against real-world Figma files (including an Apple-style product page), the skill includes a catalog of 12 common mismatch patterns and their fixes:
 
 | ID | Mismatch | Severity | What Happens |
 |---|---|:---:|---|
@@ -43,6 +43,27 @@ Tested against real-world Figma files (including an Apple-style product page), t
 | M9 | Dark background missing | P3 | Light text on accidentally-white background |
 | M10 | Figma asset URLs broken | P0 | Icons/images fail to load after URL expiry (7 days) |
 | M11 | Multi-layer gradient simplified | P1 | Complex background compositing lost when gradients merged |
+| M12 | Absolute positioning from MCP | P1 | Layout uses `position: absolute` instead of flex/grid, breaks on resize |
+
+## Layout Inference Algorithm
+
+The biggest challenge with Figma MCP: when frames lack auto layout, `get_design_context` outputs **absolute positioning** for all children. This produces rigid, unmaintainable code.
+
+The skill includes a heuristic layout inference algorithm (`references/layout-inference.md`) that converts absolute positions to semantic flex/grid:
+
+```
+Same Y positions → flex-direction: row
+Same X positions → flex-direction: column
+2D grid pattern  → display: grid
+Equal margins    → centered (justify-center / mx-auto)
+Uniform gaps     → gap-[Xpx]
+Items at edges   → justify-between
+```
+
+This approach is inspired by:
+- The [Phoenix Codie "Alchemist Engine"](https://www.go-yubi.com/blog/building-phoenix-codie/) — heuristic pattern detection
+- [Academic GUI layout inference](https://www.sciencedirect.com/science/article/abs/pii/S0950584915001718) — Allen's interval relations
+- [Anima's flexbox generation](https://www.animaapp.com/blog/product-updates/producing-flexbox-responsive-code-based-on-figma-adobe-xd-and-sketch-constraints/) — constraint-to-CSS translation
 
 Phase 3 includes prevention rules for each pattern. Phase 4's structural audit catches them in the rendered output.
 
