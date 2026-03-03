@@ -6,6 +6,8 @@ A Claude Code skill that converts **any** Figma design to React + Tailwind CSS �
 
 The Figma MCP server produces great code from well-structured files. But real-world Figma files often lack components, design tokens, Code Connect mappings, and semantic naming. This leads to token overflow, hardcoded values, and no way to verify the output.
 
+Even with structured files, AI code generation produces predictable categories of visual bugs: missing gradients, distorted SVGs, collapsed spacing, unstyled buttons, and wrong container widths. This skill addresses both the structural and the quality problems.
+
 ## How It Works
 
 The skill runs an **adaptive pipeline** that scores the Figma file's structure quality (0–8) and selects only the phases needed:
@@ -14,8 +16,8 @@ The skill runs an **adaptive pipeline** that scores the Figma file's structure q
 Phase 0: Assessment     → Score the file (always runs)
 Phase 1: Inference      → Infer missing tokens & components (score 0–3)
 Phase 2: Decomposition  → Break large files into sections (score < 7 or 500+ nodes)
-Phase 3: Code Generation → Generate React + Tailwind (always runs)
-Phase 4: Verification   → Playwright screenshot comparison (optional)
+Phase 3: Code Generation → Generate React + Tailwind with mismatch prevention (always runs)
+Phase 4: Verification   → Two-layer Playwright audit: visual + structural (optional)
 ```
 
 | Quality Score | File State | Phases Run |
@@ -23,6 +25,24 @@ Phase 4: Verification   → Playwright screenshot comparison (optional)
 | 7–8 | Well-structured (tokens, components, Code Connect) | 0 → 3 → 4 |
 | 4–6 | Partially structured (some tokens or naming) | 0 → 2 → 3 → 4 |
 | 0–3 | Unstructured (flat layers, no tokens, generic names) | 0 → 1 → 2 → 3 → 4 |
+
+## Common Mismatch Catalog
+
+Tested against real-world Figma files (including an Apple-style product page), the skill includes a catalog of 9 common mismatch patterns and their fixes:
+
+| ID | Mismatch | Severity | What Happens |
+|---|---|:---:|---|
+| M1 | Gradient text missing | P0 | Gold/metallic text renders as flat gray |
+| M2 | SVG aspect ratio distortion | P0 | Logos appear stretched or squashed |
+| M3 | Container width wrong | P1 | Content spans full viewport instead of centered max-width |
+| M4 | Vertical spacing collapsed | P1 | Sections stack too tightly, losing whitespace |
+| M5 | Button style missing | P2 | CTA buttons render as plain text links |
+| M6 | Heading size inaccurate | P2 | Font sizes >20% off from Figma values |
+| M7 | Text alignment wrong | P2 | Centered text renders left-aligned |
+| M8 | Nav positioning missing | P3 | Fixed/sticky nav scrolls with content |
+| M9 | Dark background missing | P3 | Light text on accidentally-white background |
+
+Phase 3 includes prevention rules for each pattern. Phase 4's structural audit catches them in the rendered output.
 
 ## Installation
 
@@ -51,15 +71,16 @@ cp -r figma-hybrid-orchestrator/ ~/.claude/skills/
 figma-hybrid-orchestrator/
 ├── SKILL.md                              # Main skill (orchestration logic)
 ├── references/
+│   ├── common-mismatches.md              # 9 mismatch patterns with detection & fixes
 │   ├── phase-0-assessment.md             # Scoring rubric & metadata parsing
 │   ├── phase-1-inference.md              # Color clustering, spacing, components
 │   ├── phase-2-decomposition.md          # Section detection for large files
-│   ├── phase-3-codegen.md                # React + Tailwind generation patterns
-│   ├── phase-4-playwright.md             # Screenshot verification loop
+│   ├── phase-3-codegen.md                # React + Tailwind patterns + mismatch prevention
+│   ├── phase-4-playwright.md             # Two-layer verification: visual + structural audit
 │   └── decision-trees.md                 # Pipeline selection flowcharts
 ├── scripts/
 │   ├── infer_tokens.py                   # Design token inference from raw values
-│   └── compare_screenshots.py            # SSIM-based screenshot comparison
+│   └── compare_screenshots.py            # SSIM + region-aware + mismatch classification
 └── assets/
     ├── sample_inferred_tokens.json       # Example Phase 1 output
     └── sample_quality_report.json        # Example Phase 0 output
@@ -91,14 +112,47 @@ python scripts/infer_tokens.py \
   --output tokens.json
 ```
 
-**Compare screenshots:**
+**Compare screenshots (with element-level regions):**
 
 ```bash
+# Basic comparison
 python scripts/compare_screenshots.py \
   --reference figma_screenshot.png \
   --rendered playwright_screenshot.png \
   --output diff_report.json
+
+# With element regions for Layer 2 comparison
+python scripts/compare_screenshots.py \
+  --reference figma.png \
+  --rendered playwright.png \
+  --regions element_regions.json \
+  --output diff_report.json
 ```
+
+The `--regions` file maps Figma node bounding boxes for element-by-element comparison:
+```json
+[
+  {"name": "navigation", "x": 0, "y": 0, "width": 1699, "height": 48},
+  {"name": "hero-section", "x": 0, "y": 0, "width": 1699, "height": 1433},
+  {"name": "design-section", "x": 0, "y": 1433, "width": 1699, "height": 1288}
+]
+```
+
+## Phase 4: Two-Layer Verification
+
+Simple pixel diffing catches ~40% of real issues. Phase 4 adds a **structural audit layer** that uses Playwright `page.evaluate()` to measure actual CSS properties:
+
+| Audit Check | What It Catches |
+|---|---|
+| Container widths | Sections at full viewport width instead of max-width |
+| Section spacing | Collapsed vertical gaps between sections |
+| Gradient text fills | Gradient/metallic text rendered as flat color |
+| Image aspect ratios | Distorted logos and SVGs |
+| Button styling | CTA buttons rendered as plain text links |
+| Text alignment | Centered text rendered as left-aligned |
+| Heading sizes | Font sizes >20% off from Figma values |
+
+The iterative fix loop prioritizes: P0 (identity-breaking) → P1 (layout) → P2 (components) → P3 (polish).
 
 ## Figma MCP Tools Used
 

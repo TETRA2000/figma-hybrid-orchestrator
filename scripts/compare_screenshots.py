@@ -234,6 +234,93 @@ def merge_adjacent_regions(blocks: list[dict], block_size: int) -> list[dict]:
     return merged
 
 
+# ── Region-Based Comparison ──────────────────────────────────────────────────
+
+def compare_region(
+    ref_img: Image.Image,
+    rendered_img: Image.Image,
+    region: dict,
+) -> dict[str, Any]:
+    """
+    Compare a specific region (bounding box) between reference and rendered.
+    Useful for element-level comparison when you know where each element is.
+    """
+    x, y, w, h = region["x"], region["y"], region["width"], region["height"]
+
+    # Clamp to image bounds
+    ref_w, ref_h = ref_img.size
+    x2, y2 = min(x + w, ref_w), min(y + h, ref_h)
+    x, y = max(0, x), max(0, y)
+
+    if x2 <= x or y2 <= y:
+        return {"name": region.get("name", "unknown"), "error": "region out of bounds"}
+
+    ref_crop = ref_img.crop((x, y, x2, y2))
+    ren_crop = rendered_img.crop((x, y, x2, y2))
+
+    ssim = compute_ssim_simple(ref_crop, ren_crop)
+    pixel_diff = pixel_diff_percentage(ref_crop, ren_crop)
+
+    return {
+        "name": region.get("name", f"region_{x}_{y}"),
+        "bounds": {"x": x, "y": y, "width": x2 - x, "height": y2 - y},
+        "ssim": ssim,
+        "pixel_diff_pct": pixel_diff,
+    }
+
+
+def classify_diff_regions(diff_regions: list[dict], ref_img: Image.Image, rendered_img: Image.Image) -> list[dict]:
+    """
+    Classify each diff region by likely mismatch type based on color analysis.
+    """
+    classified = []
+    for region in diff_regions:
+        x, y = region["x"], region["y"]
+        w, h = region["width"], region["height"]
+        ref_w, ref_h = ref_img.size
+
+        x2 = min(x + w, ref_w)
+        y2 = min(y + h, ref_h)
+        if x2 <= x or y2 <= y:
+            continue
+
+        ref_crop = ref_img.crop((x, y, x2, y2))
+        ren_crop = rendered_img.crop((x, y, x2, y2))
+
+        # Analyze the nature of the difference
+        ref_pixels = list(ref_crop.getdata())
+        ren_pixels = list(ren_crop.getdata())
+
+        # Check if rendered region is mostly white/empty (missing element)
+        ren_brightness = sum(sum(p) / 3 for p in ren_pixels) / len(ren_pixels)
+        ref_brightness = sum(sum(p) / 3 for p in ref_pixels) / len(ref_pixels)
+
+        # Check color distribution difference
+        ref_has_color = any(max(p) - min(p) > 50 for p in ref_pixels[:100])
+        ren_has_color = any(max(p) - min(p) > 50 for p in ren_pixels[:100])
+
+        mismatch_type = "unknown"
+        if ren_brightness > 240 and ref_brightness < 200:
+            mismatch_type = "missing_element"
+        elif ref_has_color and not ren_has_color:
+            mismatch_type = "gradient_or_color_missing"
+        elif abs(ren_brightness - ref_brightness) > 80:
+            mismatch_type = "background_color_wrong"
+        elif w > ref_w * 0.5 and h < ref_h * 0.1:
+            mismatch_type = "spacing_or_alignment"
+        else:
+            mismatch_type = "style_difference"
+
+        classified.append({
+            **region,
+            "mismatch_type": mismatch_type,
+            "ref_brightness": round(ref_brightness, 1),
+            "rendered_brightness": round(ren_brightness, 1),
+        })
+
+    return classified
+
+
 # ── Main Comparison ──────────────────────────────────────────────────────────
 
 def compare(
@@ -241,37 +328,75 @@ def compare(
     rendered_path: str,
     ssim_threshold: float = 0.85,
     pixel_diff_threshold: float = 15.0,
+    element_regions: list[dict] | None = None,
 ) -> dict[str, Any]:
     """
     Full comparison between reference and rendered screenshots.
     Returns a complete diff report.
+
+    If element_regions is provided (list of {"name", "x", "y", "width", "height"}),
+    also performs element-level comparison for each region.
     """
     # Load images
     ref_img = load_and_normalize(reference_path)
     rendered_img = load_and_normalize(rendered_path, target_size=ref_img.size)
 
-    # Compute metrics
+    # Layer 1: Full-image metrics
     ssim = compute_ssim_simple(ref_img, rendered_img)
     pixel_diff = pixel_diff_percentage(ref_img, rendered_img)
     diff_regions = find_diff_regions(ref_img, rendered_img)
 
+    # Classify diff regions by mismatch type
+    classified_regions = classify_diff_regions(diff_regions, ref_img, rendered_img)
+
     passed = ssim >= ssim_threshold and pixel_diff <= pixel_diff_threshold
 
-    return {
-        "ssim": ssim,
-        "pixel_diff_pct": pixel_diff,
-        "diff_regions": diff_regions,
-        "diff_region_count": len(diff_regions),
-        "pass": passed,
-        "thresholds": {
-            "ssim_min": ssim_threshold,
-            "pixel_diff_max": pixel_diff_threshold,
+    result: dict[str, Any] = {
+        "layer1_visual": {
+            "ssim": ssim,
+            "pixel_diff_pct": pixel_diff,
+            "pass": passed,
+            "thresholds": {
+                "ssim_min": ssim_threshold,
+                "pixel_diff_max": pixel_diff_threshold,
+            },
         },
+        "diff_regions": classified_regions,
+        "diff_region_count": len(classified_regions),
+        "mismatch_summary": {},
         "image_sizes": {
             "reference": list(ref_img.size),
             "rendered": list(rendered_img.size),
         },
     }
+
+    # Summarize mismatch types
+    type_counts: dict[str, int] = {}
+    for r in classified_regions:
+        t = r.get("mismatch_type", "unknown")
+        type_counts[t] = type_counts.get(t, 0) + 1
+    result["mismatch_summary"] = type_counts
+
+    # Layer 2: Element-level comparison (if regions provided)
+    if element_regions:
+        element_results = []
+        for region in element_regions:
+            elem_result = compare_region(ref_img, rendered_img, region)
+            element_results.append(elem_result)
+        result["layer2_elements"] = element_results
+
+        # Element-level pass: all elements SSIM > 0.80
+        elem_pass = all(
+            e.get("ssim", 0) > 0.80
+            for e in element_results
+            if "error" not in e
+        )
+        result["layer2_pass"] = elem_pass
+
+    # Overall pass combines both layers
+    result["pass"] = passed and result.get("layer2_pass", True)
+
+    return result
 
 
 def main():
@@ -303,6 +428,13 @@ def main():
         help="Maximum pixel diff percentage to pass (default: 15.0)",
     )
     parser.add_argument(
+        "--regions",
+        type=str,
+        default=None,
+        help="JSON file with element regions for Layer 2 comparison. "
+             'Format: [{"name": "header", "x": 0, "y": 0, "width": 1699, "height": 80}, ...]',
+    )
+    parser.add_argument(
         "--output",
         type=str,
         default="-",
@@ -311,12 +443,22 @@ def main():
 
     args = parser.parse_args()
 
+    # Load element regions if provided
+    element_regions = None
+    if args.regions:
+        try:
+            with open(args.regions) as f:
+                element_regions = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            print(f"Warning: Could not load regions file: {e}", file=sys.stderr)
+
     try:
         report = compare(
             args.reference,
             args.rendered,
             ssim_threshold=args.ssim_threshold,
             pixel_diff_threshold=args.pixel_threshold,
+            element_regions=element_regions,
         )
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)

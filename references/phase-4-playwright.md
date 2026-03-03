@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Visually verify that the generated React + Tailwind code matches the original Figma design. This phase renders the output in a real browser, screenshots it at multiple breakpoints, and compares against the Figma screenshots. Mismatches trigger targeted fixes in an iterative loop.
+Visually AND structurally verify that the generated React + Tailwind code matches the original Figma design. This phase goes beyond pixel-level comparison — it performs **element-level verification** that catches the real-world mismatches LLMs produce: missing gradients, distorted SVGs, collapsed spacing, unstyled buttons, and wrong alignment.
 
 ## Prerequisites
 
@@ -15,6 +15,17 @@ If Playwright MCP is not available, skip this phase and report:
 Phase 4 skipped: Playwright MCP not detected.
 Tip: Install @anthropic-ai/playwright-mcp to enable visual verification.
 ```
+
+## The Two-Layer Approach
+
+Simple pixel diffing (SSIM) catches ~40% of real issues. The other 60% require **structural verification** — measuring actual CSS properties against the Figma spec. Phase 4 uses both layers:
+
+**Layer 1: Visual comparison** — Screenshot SSIM for overall fidelity
+**Layer 2: Structural audit** — Element-by-element CSS property checks via Playwright `page.evaluate()`
+
+Layer 2 is where the high-impact bugs are caught.
+
+---
 
 ## Step 1: Create a Rendering Fixture
 
@@ -29,14 +40,11 @@ Generate a minimal HTML file that renders the React component with Tailwind:
   <title>Figma Verification Fixture</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    // Inject custom Tailwind config if Phase 1 generated one
     tailwind.config = {
       theme: {
         extend: {
           colors: {
-            primary: '#0066cc',
-            secondary: '#6c757d',
-            surface: '#f8f9fa',
+            /* inject inferred or real tokens here */
           }
         }
       }
@@ -50,120 +58,223 @@ Generate a minimal HTML file that renders the React component with Tailwind:
   <div id="root"></div>
   <script type="text/babel">
     // Inline the generated component here
-    function LandingPage() {
-      return (
-        // ... generated JSX ...
-      );
-    }
-    ReactDOM.createRoot(document.getElementById('root')).render(<LandingPage />);
+    function Page() { return ( /* ... */ ); }
+    ReactDOM.createRoot(document.getElementById('root')).render(<Page />);
   </script>
 </body>
 </html>
 ```
 
-Save this file to a temporary location and serve it (or open directly with `file://`).
+## Step 2: Layer 1 — Visual Screenshot Comparison
 
-## Step 2: Screenshot at Multiple Breakpoints
+### Capture at the Design's Native Width
 
-Use Playwright to capture the rendered output at standard breakpoints:
-
-| Breakpoint | Width | Viewport Height | Represents |
-|---|:---:|:---:|---|
-| Mobile | 320px | 568px | iPhone SE |
-| Tablet | 768px | 1024px | iPad |
-| Desktop | 1024px | 768px | Small laptop |
-| Wide | 1440px | 900px | Standard desktop |
-
-**Playwright commands for each breakpoint:**
+The Figma design has a specific width (e.g., 1699px for this iPhone 17 Pro page). Screenshot at that exact width for the most meaningful comparison.
 
 ```
 1. Navigate to the fixture URL
-2. Set viewport size to (width, height)
-3. Wait for page to fully render (networkidle or fixed delay)
+2. Set viewport width to Figma frame width (from metadata)
+3. Wait for full render (networkidle + 1s extra for images)
 4. Take full-page screenshot
-5. Save as verification_{breakpoint}.png
 ```
 
-## Step 3: Get Figma Reference Screenshots
+### Run Pixel Comparison
 
-For comparison, get Figma screenshots at matching sizes:
-
-```
-Call: get_screenshot(nodeId, fileKey) for each section
-```
-
-The Figma screenshot represents the design intent. The Playwright screenshot represents the implementation.
-
-Note: Figma screenshots are at the design's native size. If the design was created at 1440px width, the 1440px comparison will be most accurate. Other breakpoints test responsive behavior that may not exist in the Figma file.
-
-**Strategy:**
-- 1440px (or native width): **strict comparison** — should match closely
-- Other breakpoints: **structural comparison** — check that layout adapts reasonably
-
-## Step 4: Compare Screenshots
-
-Use `scripts/compare_screenshots.py` to compute difference metrics:
-
-**Metrics:**
-- **SSIM (Structural Similarity Index):** 0.0 (completely different) to 1.0 (identical). Target: > 0.85
-- **Pixel diff percentage:** Percentage of pixels that differ by > threshold. Target: < 15%
-- **Diff region bounding boxes:** Rectangular areas where differences concentrate
-
-**Comparison command:**
 ```bash
 python scripts/compare_screenshots.py \
   --reference figma_screenshot.png \
   --rendered playwright_screenshot.png \
-  --output diff_report.json
+  --output layer1_report.json
 ```
 
-**Output:**
-```json
-{
-  "ssim": 0.82,
-  "pixel_diff_pct": 18.3,
-  "diff_regions": [
-    { "x": 100, "y": 400, "width": 300, "height": 50, "severity": "high" },
-    { "x": 800, "y": 200, "width": 100, "height": 100, "severity": "medium" }
-  ],
-  "pass": false,
-  "threshold": { "ssim_min": 0.85, "pixel_diff_max": 15.0 }
+This gives a rough overall score. But the **real value** comes from Layer 2.
+
+---
+
+## Step 3: Layer 2 — Structural Audit (The Critical Step)
+
+Use Playwright's `page.evaluate()` to measure actual CSS properties of rendered elements. Check each item against the Figma metadata and design context.
+
+### Audit Checklist
+
+Run these checks in priority order. Each maps to a common mismatch pattern (see `references/common-mismatches.md`):
+
+#### Check 1: Container Width & Margins (Mismatch M3)
+
+```javascript
+// In Playwright page.evaluate():
+// Figma says content starts at x=309.5 in a 1699px frame → ~1080px content area
+const sections = document.querySelectorAll('section, [class*="max-w"]');
+sections.forEach(s => {
+  const rect = s.getBoundingClientRect();
+  const computed = getComputedStyle(s);
+  console.log(`Section: width=${rect.width}, marginLeft=${computed.marginLeft}, maxWidth=${computed.maxWidth}`);
+});
+```
+
+**Expected:** Content sections should have `max-width` close to the Figma content width (1080px in this case), centered with auto margins.
+
+**Fail condition:** Section width equals viewport width (no max-width constraint).
+
+#### Check 2: Vertical Spacing Between Sections (Mismatch M4)
+
+```javascript
+const sections = document.querySelectorAll('section');
+for (let i = 0; i < sections.length - 1; i++) {
+  const current = sections[i].getBoundingClientRect();
+  const next = sections[i + 1].getBoundingClientRect();
+  const gap = next.top - current.bottom;
+  console.log(`Gap between section ${i} and ${i+1}: ${gap}px`);
 }
+```
+
+**Expected:** Gaps should be within ±20% of the Figma metadata gaps (calculated from y-offsets).
+
+**Fail condition:** Gap is < 50% of expected OR sections overlap.
+
+#### Check 3: Text Gradient / Special Fills (Mismatch M1)
+
+```javascript
+// Check if gradient text is actually rendered with gradient
+const gradientTexts = document.querySelectorAll('[class*="bg-gradient"], [class*="bg-clip-text"]');
+gradientTexts.forEach(el => {
+  const style = getComputedStyle(el);
+  console.log(`Gradient text: backgroundImage=${style.backgroundImage}, webkitTextFillColor=${style.webkitTextFillColor}`);
+});
+
+// Also check: are there headings that SHOULD have gradients but don't?
+const allHeadings = document.querySelectorAll('h1, h2, h3, [class*="text-4xl"], [class*="text-5xl"]');
+allHeadings.forEach(h => {
+  const style = getComputedStyle(h);
+  const color = style.color;
+  console.log(`Heading "${h.textContent.substring(0, 20)}": color=${color}, bgImage=${style.backgroundImage}`);
+});
+```
+
+**Expected:** If the Figma screenshot shows gradient/metallic text, the rendered heading should have `background-image: linear-gradient(...)` and `-webkit-text-fill-color: transparent`.
+
+**Fail condition:** Heading renders as flat color when Figma shows gradient.
+
+#### Check 4: Image / SVG Aspect Ratios (Mismatch M2)
+
+```javascript
+const images = document.querySelectorAll('img, svg');
+images.forEach(img => {
+  if (img.tagName === 'IMG') {
+    const natural = { w: img.naturalWidth, h: img.naturalHeight };
+    const rendered = { w: img.clientWidth, h: img.clientHeight };
+    const naturalRatio = natural.w / natural.h;
+    const renderedRatio = rendered.w / rendered.h;
+    const distortion = Math.abs(naturalRatio - renderedRatio) / naturalRatio;
+    console.log(`IMG: natural=${natural.w}x${natural.h}, rendered=${rendered.w}x${rendered.h}, distortion=${(distortion*100).toFixed(1)}%`);
+  } else {
+    const vb = img.getAttribute('viewBox');
+    const rect = img.getBoundingClientRect();
+    console.log(`SVG: viewBox=${vb}, rendered=${rect.width}x${rect.height}`);
+  }
+});
+```
+
+**Expected:** Distortion < 5%.
+
+**Fail condition:** Any image with distortion > 10%.
+
+#### Check 5: Button Styling (Mismatch M5)
+
+```javascript
+const buttons = document.querySelectorAll('a, button');
+buttons.forEach(btn => {
+  const style = getComputedStyle(btn);
+  const text = btn.textContent.trim();
+  if (['Buy', 'Pre-order', 'Learn more', 'Order', 'Shop'].some(t => text.includes(t))) {
+    console.log(`Button "${text}": bg=${style.backgroundColor}, borderRadius=${style.borderRadius}, padding=${style.padding}, display=${style.display}`);
+  }
+});
+```
+
+**Expected:** CTA buttons (Pre-order, Buy) should have non-transparent `background-color`, `border-radius > 0`, and visible padding.
+
+**Fail condition:** Primary CTA has `background-color: transparent` or `rgba(0,0,0,0)`.
+
+#### Check 6: Text Alignment (Mismatch M7)
+
+```javascript
+// Check headings and paragraphs for correct alignment
+const textElements = document.querySelectorAll('h1, h2, h3, h4, p');
+textElements.forEach(el => {
+  const style = getComputedStyle(el);
+  const rect = el.getBoundingClientRect();
+  const parentRect = el.parentElement.getBoundingClientRect();
+  const centerOffset = Math.abs((rect.left + rect.width/2) - (parentRect.left + parentRect.width/2));
+  console.log(`"${el.textContent.substring(0, 30)}": textAlign=${style.textAlign}, centerOffset=${centerOffset.toFixed(0)}px`);
+});
+```
+
+**Expected:** Centered text elements have `textAlign: center` or `centerOffset < 20px`.
+
+**Fail condition:** Element should be centered (per Figma) but has `textAlign: left` and `centerOffset > 50px`.
+
+#### Check 7: Heading Sizes (Mismatch M6)
+
+```javascript
+const headings = document.querySelectorAll('h1, h2, h3');
+headings.forEach(h => {
+  const style = getComputedStyle(h);
+  console.log(`"${h.textContent.substring(0, 30)}": fontSize=${style.fontSize}, fontWeight=${style.fontWeight}, lineHeight=${style.lineHeight}`);
+});
+```
+
+**Expected:** Font sizes within ±15% of Figma metadata text node heights.
+
+**Fail condition:** Rendered font-size is > 130% or < 70% of Figma value.
+
+---
+
+## Step 4: Classify and Prioritize Fixes
+
+After both layers complete, compile a prioritized fix list:
+
+```
+Structural Audit Results:
+═══════════════════════════
+
+P0 — CRITICAL (breaks visual identity):
+  [ ] M1: "Pro" heading rendered as flat gray, should have gold gradient
+       → Fix: Add bg-gradient-to-b with gold color stops + bg-clip-text
+  [ ] M2: Apple logo SVG distorted (18x22 → 200x50, 340% width distortion)
+       → Fix: Change to h-[22px] w-auto, remove explicit width
+
+P1 — LAYOUT (visually broken):
+  [ ] M3: Content sections full-width instead of 1080px max
+       → Fix: Add max-w-[1080px] mx-auto wrapper to each section
+  [ ] M4: Section gaps 20px instead of 160px (87% smaller)
+       → Fix: Add gap-[160px] or explicit spacers between sections
+
+P2 — COMPONENTS (wrong but functional):
+  [ ] M5: "Pre-order" button renders as plain text link
+       → Fix: Add bg-blue-600 text-white rounded-full px-7 py-3
+  [ ] M5: Nav "Buy" button unstyled
+       → Fix: Add bg-blue-600 text-white rounded-full px-4 py-1.5 text-xs
+
+P3 — POLISH (minor differences):
+  [ ] M7: "DESIGN" label left-aligned, should be left-aligned within container
+       → Acceptable: container alignment is the real issue (M3)
 ```
 
 ## Step 5: Iterative Fix Loop
 
-If the comparison fails (SSIM < 0.85 OR pixel diff > 15%), analyze and fix:
+Maximum 3 iterations. Fix in priority order (P0 → P1 → P2 → P3):
 
-### Error Classification
+**Iteration 1:** Fix all P0 issues (gradient text, distorted images)
+**Iteration 2:** Fix all P1 issues (container widths, spacing)
+**Iteration 3:** Fix P2 issues (button styles, interactive elements)
 
-Examine the diff regions and classify the errors:
-
-| Error Type | Visual Signal | Fix Strategy |
-|---|---|---|
-| **Spacing off** | Content shifted vertically/horizontally | Adjust padding/margin/gap utilities |
-| **Color wrong** | Region has different hue/saturation | Fix the color class mapping |
-| **Missing element** | Large blank region in rendered vs content in Figma | Re-check the design context for missing nodes |
-| **Wrong size** | Element too large or too small | Fix width/height utilities |
-| **Font mismatch** | Text renders differently | Usually acceptable — font rendering varies by OS |
-| **Image missing** | White/broken image area | Check localhost URL is still valid |
-
-### Fix Strategy
-
-For each classified error:
-
-1. **Spacing:** Compare the Figma node's padding/gap values against the generated Tailwind classes. Adjust classes.
-2. **Color:** Look up the correct hex from design context, re-map to Tailwind.
-3. **Missing element:** Re-fetch the design context for that specific region and add the missing node.
-4. **Wrong size:** Check if the Figma node had fixed dimensions and add explicit width/height.
-
-### Iteration Limit
-
-Maximum 3 iterations. After each fix:
-1. Update the fixture
-2. Re-screenshot with Playwright
-3. Re-compare
-4. If pass → done. If fail and iterations < 3 → fix again. If iterations = 3 → report remaining issues.
+After each fix:
+1. Update the component code
+2. Re-render in Playwright
+3. Re-run the structural audit (Layer 2)
+4. Re-run screenshot comparison (Layer 1)
+5. If all P0 and P1 pass → declare success. P2/P3 remaining issues go in the report.
 
 ## Step 6: Generate Verification Report
 
@@ -171,49 +282,62 @@ Maximum 3 iterations. After each fix:
 Verification Report
 ═══════════════════
 
+Layer 1 — Visual Comparison:
 | Breakpoint | SSIM  | Pixel Diff | Status |
 |------------|-------|-----------|--------|
-| 320px      | 0.79  | 22.1%     | WARN   |
-| 768px      | 0.88  | 11.5%     | PASS   |
-| 1024px     | 0.91  | 8.2%      | PASS   |
-| 1440px     | 0.93  | 5.1%      | PASS   |
+| 1699px     | 0.91  | 7.2%      | PASS   |
+
+Layer 2 — Structural Audit:
+| Check               | Status | Detail                                    |
+|---------------------|--------|-------------------------------------------|
+| Container widths    | PASS   | max-w-[1080px] applied to all sections    |
+| Section spacing     | PASS   | Gaps within ±20% of Figma spec            |
+| Gradient text       | PASS   | "Pro" has gold gradient (fixed iteration 1)|
+| Image aspect ratios | PASS   | Logo 18x22 preserved (fixed iteration 1)  |
+| Button styles       | PASS   | Pre-order: blue pill (fixed iteration 2)  |
+| Text alignment      | PASS   | Centered where Figma centers              |
+| Heading sizes       | WARN   | H2 is 64px, Figma shows 76px (±15%)      |
 
 Iterations: 2 of 3
-Total fixes applied: 4
-  - 2 spacing adjustments (gap-4 → gap-6 in Features section)
-  - 1 color correction (bg-gray-100 → bg-gray-50 in Card)
-  - 1 missing element added (decorative divider in Footer)
+Fixes applied: 6
+  P0: 2 (gradient text, SVG aspect ratio)
+  P1: 2 (container max-width, section gaps)
+  P2: 2 (Pre-order button, Buy button)
 
-Remaining issues:
-  - 320px mobile: Layout doesn't collapse to single column (Figma design is desktop-only)
-  - Minor font rendering differences (Inter vs system fallback)
-
-Recommendation: The 320px differences are expected since the Figma design
-only shows a desktop layout. Consider adding mobile-specific responsive
-classes manually.
+Remaining:
+  - H2 size ±15% — within tolerance but noticeable
+  - Mobile breakpoints untested (design is desktop-only)
 ```
 
 ## Thresholds
 
+### Layer 1 (Visual)
+
 | Metric | Pass | Warn | Fail |
 |---|:---:|:---:|:---:|
 | SSIM (native width) | ≥ 0.85 | 0.75–0.84 | < 0.75 |
-| SSIM (other widths) | ≥ 0.75 | 0.65–0.74 | < 0.65 |
 | Pixel diff (native) | ≤ 15% | 15–25% | > 25% |
-| Pixel diff (other) | ≤ 25% | 25–35% | > 35% |
 
-Note: Non-native breakpoints have looser thresholds because the Figma design may not include responsive variants.
+### Layer 2 (Structural)
+
+| Check | Pass | Warn | Fail |
+|---|---|---|---|
+| Container width | Within ±5% of Figma | Within ±15% | > 15% off or no max-width |
+| Section gaps | Within ±20% of Figma | Within ±40% | > 40% off or collapsed |
+| Gradient text | Has gradient CSS | Has flat color close to gradient midpoint | Wrong color entirely |
+| Image aspect ratio | Distortion < 5% | 5–15% | > 15% |
+| Button styling | Has bg + radius + padding | Has some styling | Plain text link |
+| Text alignment | Matches Figma | Off by < 20px | Opposite alignment |
+| Font sizes | Within ±10% | ±10–20% | > 20% off |
 
 ## Graceful Degradation
 
-If any step fails, Phase 4 degrades gracefully:
-
 | Failure | Behavior |
 |---|---|
-| Playwright MCP not available | Skip Phase 4 entirely |
-| Fixture fails to render | Report error, suggest checking generated code for syntax issues |
-| Screenshot comparison script errors | Report "verification inconclusive", deliver code without verification |
-| All 3 iterations fail to converge | Deliver code + full diff report + list of remaining issues |
-| Figma screenshot not available | Skip comparison for that section, note in report |
+| Playwright MCP not available | Skip Phase 4 entirely, note in output |
+| Fixture fails to render | Report syntax error, suggest fix |
+| Layer 1 fails but Layer 2 passes | Trust Layer 2 (pixel diffs may be fonts/antialiasing) |
+| Layer 2 JS errors | Fall back to Layer 1 only, report partial audit |
+| All 3 iterations fail to converge | Deliver code + full report with remaining P0/P1 issues highlighted |
 
 Phase 4 never blocks code delivery. It enhances confidence but is not a gate.

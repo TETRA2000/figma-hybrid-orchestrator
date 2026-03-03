@@ -181,14 +181,17 @@ export default function ComponentName({}: ComponentNameProps) {
 }
 ```
 
-**Critical rules:**
-- NEVER use hardcoded pixel values in className — always use Tailwind utilities
-- NEVER create placeholder images — use Figma MCP localhost URLs for all assets
-- NEVER invent component libraries — use Code Connect mappings or inferred components only
-- Always preserve the visual hierarchy from the Figma frame
-- Use `className` (not `class`), use self-closing tags for void elements
+**Critical mismatch prevention rules** (see `references/common-mismatches.md` for the full catalog):
 
-For full patterns and examples, see `references/phase-3-codegen.md`.
+- **Container widths (M3):** Calculate content area from metadata x-offsets. If children start at x=310 in a 1700px frame, the content is ~1080px wide. Always wrap sections with `max-w-[1080px] mx-auto`.
+- **Gradient text (M1):** If the Figma screenshot shows gradient or metallic text, call `get_design_context` on the specific text node. Use `bg-gradient-to-b ... bg-clip-text text-transparent`.
+- **SVG aspect ratio (M2):** Never set both explicit width AND height on images. Use `h-[Xpx] w-auto` for icons and logos.
+- **Section spacing (M4):** Calculate gaps from metadata y-offsets. Preserve them with `py-[Xpx]` or parent flex `gap-[Xpx]`.
+- **Button detection (M5):** Frames named "Link"/"Button" with fills + border-radius + text are styled buttons, not plain links. Generate full `bg-[color] rounded-full px-7 py-3`.
+- **Heading sizes (M6):** For large headings (>24px), use exact Figma px values as `text-[Xpx]` rather than nearest Tailwind class.
+- **Text alignment (M7):** Check if text x-position centers within its parent. If `|x - (parent_width - text_width)/2| < 10px`, add `text-center`.
+
+For full patterns, examples, and prevention strategies, see `references/phase-3-codegen.md`.
 
 ---
 
@@ -204,38 +207,25 @@ Phase 4 skipped: Playwright MCP not detected.
 To enable visual verification, configure @anthropic-ai/playwright-mcp or similar.
 ```
 
-**Steps:**
+Phase 4 uses a **two-layer approach** because simple pixel diffing catches only ~40% of real issues:
 
-1. Create a minimal HTML fixture that renders the generated React component:
-   - Include Tailwind CSS via CDN
-   - Mount the component with ReactDOM
-   - Save as a temp `.html` file
-2. Use Playwright to open the fixture
-3. For each breakpoint (320px, 768px, 1024px, 1440px):
-   a. Resize viewport
-   b. Take a Playwright screenshot
-   c. Get the corresponding Figma screenshot via `get_screenshot(nodeId, fileKey)`
-   d. Run `scripts/compare_screenshots.py` to compute SSIM score and diff regions
-4. If SSIM < 0.85 at any breakpoint:
-   a. Analyze the diff regions — classify errors (spacing, color, missing element, wrong size)
-   b. Apply targeted fixes to the component code
-   c. Re-render and re-compare (max 3 iterations)
-5. Generate a verification report:
+**Layer 1 — Visual comparison:** Screenshot at the Figma frame's native width, SSIM comparison for overall fidelity.
 
-```
-Verification Report:
-| Breakpoint | SSIM Score | Status |
-|------------|-----------|--------|
-| 320px      | 0.92      | PASS   |
-| 768px      | 0.88      | PASS   |
-| 1024px     | 0.91      | PASS   |
-| 1440px     | 0.87      | PASS   |
+**Layer 2 — Structural audit (where the real bugs are):** Use Playwright `page.evaluate()` to measure actual CSS properties against the Figma spec. This catches the critical mismatches that pixel comparison misses:
 
-Iterations: 2 of 3
-Remaining issues: Minor spacing difference in footer (±2px)
-```
+| Audit Check | What It Catches |
+|---|---|
+| Container widths | Sections at full viewport width instead of correct max-width |
+| Section spacing | Collapsed vertical gaps between sections |
+| Gradient text fills | Gradient/metallic text rendered as flat color |
+| Image aspect ratios | Distorted logos and SVGs |
+| Button styling | CTA buttons rendered as plain text links |
+| Text alignment | Centered text rendered as left-aligned |
+| Heading sizes | Font sizes >20% off from Figma values |
 
-For the full verification workflow, see `references/phase-4-playwright.md`.
+**Iterative fix loop** (max 3 rounds): Fix P0 issues first (gradients, distorted images), then P1 (layout, spacing), then P2 (buttons, polish). After each fix, re-render and re-audit.
+
+For the full verification workflow with Playwright code snippets, see `references/phase-4-playwright.md`.
 
 ---
 
@@ -272,11 +262,12 @@ At the end of the pipeline, deliver:
 
 | File | When to Read |
 |------|-------------|
+| `references/common-mismatches.md` | **Read first!** Catalog of 9 common mismatch types with fixes |
 | `references/phase-0-assessment.md` | Full scoring rubric, metadata parsing examples |
 | `references/phase-1-inference.md` | Color clustering algorithm, spacing extraction, pattern detection |
 | `references/phase-2-decomposition.md` | Section detection algorithm, token budget management |
-| `references/phase-3-codegen.md` | React + Tailwind patterns, Code Connect handling, assembly |
-| `references/phase-4-playwright.md` | Fixture setup, screenshot comparison, iterative fix loop |
+| `references/phase-3-codegen.md` | React + Tailwind patterns, mismatch prevention rules, Code Connect handling |
+| `references/phase-4-playwright.md` | Two-layer verification: screenshot + structural audit via Playwright |
 | `references/decision-trees.md` | Flowcharts for pipeline selection, decomposition triggers |
 
 ## Scripts

@@ -285,16 +285,107 @@ const config: Config = {
 export default config;
 ```
 
-## Critical Rules
+## Mismatch Prevention Rules
 
-1. **No hardcoded pixel values in className** — Use Tailwind utilities. Only use `[Xpx]` arbitrary values when no utility exists.
-2. **No placeholder images** — Use Figma MCP localhost URLs for all assets.
-3. **No invented component libraries** — Only use Code Connect mappings or inferred components.
-4. **Preserve visual hierarchy** — The DOM structure should reflect the visual nesting from Figma.
-5. **Use semantic HTML** — `<nav>` for navigation, `<main>` for main content, `<footer>` for footer, `<section>` for sections, `<article>` for cards.
-6. **Include responsive hints** — Even if Figma shows one breakpoint, add responsive classes where layout obviously needs to adapt (e.g., `grid-cols-1 md:grid-cols-3` for card grids).
-7. **TypeScript** — All components use TypeScript with proper interfaces for props.
-8. **Default exports** — Each component file has a default export.
+These rules address the most common and impactful mismatches found in real-world conversions. See `references/common-mismatches.md` for the full catalog with examples.
+
+### Container Widths (Mismatch M3 — causes ~30% of visual bugs)
+
+Content sections almost never span the full viewport width. Calculate the intended content width from the Figma metadata:
+
+```
+content_x = first content child's x-position within the frame
+content_width = frame_width - (2 × content_x)
+```
+
+For example, if the frame is 1699px and children start at x=309.5, the content area is ~1080px. Always apply:
+
+```tsx
+<section className="w-full">
+  <div className="max-w-[1080px] mx-auto px-6">
+    {/* section content */}
+  </div>
+</section>
+```
+
+### Gradient / Special Text (Mismatch M1 — P0 severity)
+
+If a text node in the Figma screenshot appears to have gradient, metallic, or multi-colored fills, call `get_design_context` on that specific text node to capture the gradient. Never render gradient text as a flat color.
+
+```tsx
+/* Gradient text pattern */
+<span className="bg-gradient-to-b from-[#c9a96e] via-[#87704e] to-[#c9a96e] bg-clip-text text-transparent">
+  Pro
+</span>
+```
+
+### SVG / Image Aspect Ratio (Mismatch M2 — P0 severity)
+
+Never set both explicit width AND height on images unless they match the original aspect ratio. Prefer constraining one dimension:
+
+```tsx
+/* Logo/icon: constrain height, auto width */
+<img src={url} className="h-[22px] w-auto" alt="Logo" />
+
+/* Content image: constrain width, auto height with object-fit */
+<img src={url} className="w-full h-auto object-cover" alt="Hero" />
+```
+
+### Section Spacing (Mismatch M4)
+
+Calculate gaps from metadata y-offsets and preserve them:
+
+```
+gap = next_section.y - (current_section.y + current_section.height)
+```
+
+Use `py-[Xpx]` or explicit spacing in the parent flex container.
+
+### Button Detection (Mismatch M5)
+
+Any Figma frame named "Link" or "Button" that contains text AND has:
+- A fill color (background)
+- Border-radius > 0
+- Explicit dimensions
+
+...is a styled button, not a plain text link. Generate it with full background, padding, and border-radius:
+
+```tsx
+<a className="inline-flex items-center justify-center px-7 py-3 bg-[#0071e3] text-white text-sm font-medium rounded-full">
+  Pre-order
+</a>
+```
+
+### Text Alignment Detection (Mismatch M7)
+
+For every text node, calculate:
+```
+expected_center = (parent_width - text_width) / 2
+actual_x = text.x within parent
+```
+
+If `|actual_x - expected_center| < 10px`, the text is centered → add `text-center`.
+
+### Heading Sizes (Mismatch M6)
+
+For hero headings and display text (>24px), use exact Figma values as arbitrary Tailwind classes rather than mapping to named classes. The jump between `text-5xl` (48px) and `text-6xl` (60px) is too large for accurate rendering:
+
+```tsx
+/* Prefer exact values for large headings */
+<h1 className="text-[76px] leading-[1.18] font-bold tracking-tight">
+```
+
+Use named Tailwind classes (`text-base`, `text-lg`) only for body text where ±2px is acceptable.
+
+## General Critical Rules
+
+1. **No placeholder images** — Use Figma MCP localhost URLs for all assets.
+2. **No invented component libraries** — Only use Code Connect mappings or inferred components.
+3. **Preserve visual hierarchy** — The DOM structure should reflect the visual nesting from Figma.
+4. **Use semantic HTML** — `<nav>` for navigation, `<main>` for main content, `<footer>` for footer, `<section>` for sections, `<article>` for cards.
+5. **Include responsive hints** — Even if Figma shows one breakpoint, add responsive classes where layout obviously needs to adapt (e.g., `grid-cols-1 md:grid-cols-3` for card grids).
+6. **TypeScript** — All components use TypeScript with proper interfaces for props.
+7. **Default exports** — Each component file has a default export.
 
 ## Output Files
 
