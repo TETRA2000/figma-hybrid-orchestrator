@@ -1,0 +1,50 @@
+{
+  "score": 3,
+  "classification": "unstructured",
+  "breakdown": {
+    "components": {
+      "points": 0,
+      "max": 2,
+      "detail": "No COMPONENT or COMPONENT_SET nodes found in metadata"
+    },
+    "variables": {
+      "points": 1,
+      "max": 2,
+      "detail": "3 variables found via get_variable_defs (2 color variables, 1 spacing variable)"
+    },
+    "naming": {
+      "points": 1,
+      "max": 1,
+      "detail": "28% generic names (Group, Frame, Rectangle) — below 30% threshold"
+    },
+    "auto_layout": {
+      "points": 1,
+      "max": 1,
+      "detail": "62% of frames use layoutMode (HORIZONTAL or VERTICAL)"
+    },
+    "code_connect": {
+      "points": 0,
+      "max": 2,
+      "detail": "get_code_connect_map returned empty — no Code Connect mappings configured"
+    }
+  },
+  "node_count": 347,
+  "estimated_tokens": 24290,
+  "decomposition_needed": false,
+  "pipeline": {
+    "phases": ["phase-0", "phase-1", "phase-2", "phase-3", "phase-4"],
+    "reason": "Score 3 (unstructured) triggers full pipeline",
+    "estimated_mcp_calls": 22,
+    "estimated_time_minutes": 8
+  },
+  "warnings": [
+    "No components detected — Phase 1 will infer component patterns from visual similarity",
+    "No Code Connect mappings — Phase 3 will generate generic component names",
+    "3 variables found but insufficient for a full token system — Phase 1 will supplement"
+  ],
+  "suggestions_for_designer": [
+    "Convert repeated elements (cards, buttons) into Figma components for better results",
+    "Add design tokens using Figma Variables for colors, spacing, and typography",
+    "Set up Code Connect to map components to your codebase"
+  ]
+}

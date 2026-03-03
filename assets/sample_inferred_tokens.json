@@ -1,0 +1,84 @@
+{
+  "meta": {
+    "generator": "figma-hybrid-orchestrator/infer_tokens.py",
+    "color_clusters": 12,
+    "unique_colors_input": 23,
+    "spacing_values_input": 45,
+    "font_specs_input": 18
+  },
+  "colors": {
+    "primary": { "hex": "#0066cc", "tailwind": "blue-600", "usage": "buttons, links, accents" },
+    "secondary": { "hex": "#6c757d", "tailwind": "gray-500", "usage": "secondary actions, borders" },
+    "error": { "hex": "#dc3545", "tailwind": "red-600", "usage": "error states" },
+    "success": { "hex": "#28a745", "tailwind": "green-600", "usage": "success states" },
+    "warning": { "hex": "#ffc107", "tailwind": "amber-500", "usage": "warning states" },
+    "text-primary": { "hex": "#212529", "tailwind": "gray-800", "usage": "headings, body text" },
+    "text-secondary": { "hex": "#6c757d", "tailwind": "gray-500", "usage": "captions, metadata" },
+    "border": { "hex": "#dee2e6", "tailwind": "gray-300", "usage": "borders, dividers" },
+    "surface": { "hex": "#f8f9fa", "tailwind": "gray-50", "usage": "card backgrounds, secondary bg" },
+    "background": { "hex": "#ffffff", "tailwind": "white", "usage": "page background" }
+  },
+  "spacing": {
+    "base_unit": 4,
+    "scale": [0, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64],
+    "common_patterns": {
+      "element_gap": 8,
+      "card_padding": 16,
+      "section_gap": 32,
+      "page_margin": 64
+    },
+    "raw_frequencies": {
+      "16": 28, "8": 22, "32": 15, "24": 12, "4": 10,
+      "48": 8, "12": 6, "64": 5, "20": 3, "40": 2
+    }
+  },
+  "typography": {
+    "font_families": ["Inter", "sans-serif"],
+    "scale": {
+      "display": { "size": 48, "weight": 700, "family": "Inter", "tailwind": "text-5xl font-bold" },
+      "h1": { "size": 36, "weight": 700, "family": "Inter", "tailwind": "text-4xl font-bold" },
+      "h2": { "size": 24, "weight": 600, "family": "Inter", "tailwind": "text-2xl font-semibold" },
+      "h3": { "size": 18, "weight": 600, "family": "Inter", "tailwind": "text-lg font-semibold" },
+      "body": { "size": 16, "weight": 400, "family": "Inter", "tailwind": "text-base font-normal" },
+      "small": { "size": 14, "weight": 400, "family": "Inter", "tailwind": "text-sm font-normal" },
+      "caption": { "size": 12, "weight": 400, "family": "Inter", "tailwind": "text-xs font-normal" }
+    }
+  },
+  "radii": {
+    "none": 0,
+    "sm": 4,
+    "md": 8,
+    "lg": 16,
+    "full": 9999
+  },
+  "components": [
+    {
+      "name": "Card",
+      "instances": 6,
+      "typical_size": { "width": 300, "height": 200 },
+      "children_pattern": ["IMAGE", "TEXT", "TEXT", "BUTTON"],
+      "sample_nodes": ["123:456", "123:789"]
+    },
+    {
+      "name": "Button",
+      "instances": 12,
+      "typical_size": { "width": 120, "height": 40 },
+      "variants": ["primary (filled)", "secondary (outlined)"],
+      "sample_nodes": ["124:100", "124:200"]
+    },
+    {
+      "name": "NavItem",
+      "instances": 5,
+      "typical_size": { "width": 80, "height": 40 },
+      "children_pattern": ["TEXT"],
+      "sample_nodes": ["125:300"]
+    }
+  ],
+  "tailwind_config_extension": {
+    "colors": {
+      "primary": "#0066cc",
+      "secondary": "#6c757d",
+      "surface": "#f8f9fa"
+    }
+  }
+}
